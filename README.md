@@ -1,5 +1,5 @@
 # fastapi_blueprint
-FastApi Blueprint Development
+FastAPI Blueprint Development
 ## How to use
 1. Copy dodo.py file to the target directory
 2. Install doit globally
