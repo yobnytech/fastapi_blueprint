@@ -86,12 +86,17 @@ from sqlalchemy_utils.types.choice import ChoiceType
 from enum import Enum
 from sqlalchemy.dialects.postgresql import ENUM as pgEnum
 
+class Test(Model):
+    
+    __tablename__ = "test"
+
 """
 
 TEST_CONTROLLER = """
 from fastapi.openapi.models import APIKey
 from fastapi.param_functions import Depends
 from fastapi import APIRouter
+from app.db.models import Test
 
 router = APIRouter()
 
@@ -793,6 +798,16 @@ def task_set_env():
 def task_docker_db():
     return {
         'actions': ['docker compose up -d'],
+    }
+
+def task_execute_first_migration():
+    return {
+        'actions': ['venv/bin/alembic revision --autogenerate -m "First Migration"'],
+    }
+
+def task_sync_first_migration():
+    return {
+        'actions': ['venv/bin/alembic upgrade heads'],
     }
 
 def task_run_server():
