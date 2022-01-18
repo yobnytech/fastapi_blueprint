@@ -77,6 +77,35 @@ dmypy.json
 cython_debug/
 """
 
+TEST_MODELS = """
+from typing import Awaitable
+from uuid import UUID
+from app.core.dbsetup import Model, db
+from sqlalchemy_utils.types.uuid import UUIDType
+from sqlalchemy_utils.types.choice import ChoiceType
+from enum import Enum
+from sqlalchemy.dialects.postgresql import ENUM as pgEnum
+
+"""
+
+TEST_CONTROLLER = """
+from fastapi.openapi.models import APIKey
+from fastapi.param_functions import Depends
+from fastapi import APIRouter
+
+router = APIRouter()
+
+"""
+
+DOT_ENV = """
+export settings=dev
+export DB_NAME=testdb
+export DB_USER=test_user
+export DB_PASSWORD=test_pass
+export DB_HOST=127.0.0.1
+export DB_PORT=5432
+"""
+
 MAIN_FILE = """
 
 import uvicorn
@@ -92,10 +121,12 @@ from starlette.middleware.base import (
     RequestResponseEndpoint)
 from app.core.extensions import db
 from app.core.factories import settings
+from app.api.exceptions.generic_exception import CustomHTTPException
+from app.api.controller.test_controller import router as test_router
 
 app = FastAPI()
 db.init_app(app)
-app.include_router(scheduler_router)
+app.include_router(test_router)
 
 
 class CustomSuccessHeader(BaseHTTPMiddleware):
@@ -293,7 +324,7 @@ class BaseConfig:
     LOGGER_NAME = "%s_log" % project_name
     LOG_FILENAME = "/var/tmp/app.%s.log" % project_name
     CORS_ORIGINS = config("CORS_HOSTS", default="*")
-    DEBUG = config("DEBUG", cast=bool, default=False)
+    DEBUG = config("DEBUG", cast=bool, default=True)
     TESTING = config("TESTING", cast=bool, default=False)
 
     # Authentication
@@ -321,31 +352,31 @@ class DevSettings(BaseConfig):
 
     config = Config()
 
-    DEBUG = config("DEBUG", cast=bool)
+    DEBUG = config("DEBUG", cast=bool, default=True)
     DB_USER = config("DB_USER", cast=str)
     DB_PASSWORD = config("DB_PASSWORD", cast=Secret)
     DB_HOST = config("DB_HOST", cast=str)
     DB_PORT = config("DB_PORT", cast=str)
     DB_NAME = config("DB_NAME", cast=str)
-    INCLUDE_SCHEMA = config("INCLUDE_SCHEMA", cast=bool)
-    AUTHORISED_CLIENT_KEYS = config("AUTHORISED_CLIENT_KEYS", cast=CommaSeparatedStrings)  # noqa
+    INCLUDE_SCHEMA = config("INCLUDE_SCHEMA", cast=bool, default=False)
+    AUTHORISED_CLIENT_KEYS = config("AUTHORISED_CLIENT_KEYS", cast=CommaSeparatedStrings, default="")  # noqa
     DATABASE_URL = config("DATABASE_URL", default=f"asyncpg://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}",)  # noqa
 
-    FIREBASE_API_KEY = config("FIREBASE_API_KEY", cast=str)  # noqa
-    FIREBASE_AUTH_DOMAIN = config("FIREBASE_AUTH_DOMAIN", cast=str)  # noqa
-    FIREBASE_DB_URL = config("FIREBASE_DB_URL", cast=str,)  # noqa
-    FIREBASE_STORAGE_BUCKET = config("FIREBASE_STORAGE_BUCKET", cast=str)  # noqa
+    FIREBASE_API_KEY = config("FIREBASE_API_KEY", cast=str, default="")  # noqa
+    FIREBASE_AUTH_DOMAIN = config("FIREBASE_AUTH_DOMAIN", cast=str, default="")  # noqa
+    FIREBASE_DB_URL = config("FIREBASE_DB_URL", cast=str, default="")  # noqa
+    FIREBASE_STORAGE_BUCKET = config("FIREBASE_STORAGE_BUCKET", cast=str, default="")  # noqa
 
-    FIREBASE_TYPE = config("FIREBASE_TYPE", cast=str)  # noqa
-    FIREBASE_PROJECT_ID = config("FIREBASE_PROJECT_ID", cast=str)  # noqa
-    FIREBASE_PRIVATE_KEY_ID = config("FIREBASE_PRIVATE_KEY_ID", cast=str)  # noqa
-    FIREBASE_PRIVATE_KEY = config("FIREBASE_PRIVATE_KEY", cast=str)  # noqa
-    FIREBASE_CLIENT_EMAIL = config("FIREBASE_CLIENT_EMAIL", cast=str)  # noqa
-    FIREBASE_CLIENT_ID = config("FIREBASE_CLIENT_ID", cast=str)  # noqa
-    FIREBASE_AUTH_URI = config("FIREBASE_AUTH_URI", cast=str)  # noqa
-    FIREBASE_TOKEN_URI = config("FIREBASE_TOKEN_URI", cast=str)  # noqa
-    FIREBASE_AUTH_PROVIDER_X509_CERT_URL = config("FIREBASE_AUTH_PROVIDER_X509_CERT_URL", cast=str)  # noqa
-    FIREBASE_CLIENT_X509_CERT_URL = config("FIREBASE_CLIENT_X509_CERT_URL", cast=str)  # noqa
+    FIREBASE_TYPE = config("FIREBASE_TYPE", cast=str, default="")  # noqa
+    FIREBASE_PROJECT_ID = config("FIREBASE_PROJECT_ID", cast=str, default="")  # noqa
+    FIREBASE_PRIVATE_KEY_ID = config("FIREBASE_PRIVATE_KEY_ID", cast=str, default="")  # noqa
+    FIREBASE_PRIVATE_KEY = config("FIREBASE_PRIVATE_KEY", cast=str, default="")  # noqa
+    FIREBASE_CLIENT_EMAIL = config("FIREBASE_CLIENT_EMAIL", cast=str, default="")  # noqa
+    FIREBASE_CLIENT_ID = config("FIREBASE_CLIENT_ID", cast=str, default="")  # noqa
+    FIREBASE_AUTH_URI = config("FIREBASE_AUTH_URI", cast=str, default="")  # noqa
+    FIREBASE_TOKEN_URI = config("FIREBASE_TOKEN_URI", cast=str, default="")  # noqa
+    FIREBASE_AUTH_PROVIDER_X509_CERT_URL = config("FIREBASE_AUTH_PROVIDER_X509_CERT_URL", cast=str, default="")  # noqa
+    FIREBASE_CLIENT_X509_CERT_URL = config("FIREBASE_CLIENT_X509_CERT_URL", cast=str, default="")  # noqa
 
 """
 
@@ -382,8 +413,10 @@ class SurrogateAudit(object):
 
     __table_args__ = {"extend_existing": True}
 
+    _created = db.Column(db.Time(), nullable=True)
+    _modified = db.Column(db.Time(), nullable=True)
     _created_by = db.Column(db.String(), nullable=True)
-    _updated_by = db.Column(db.String(), nullable=True)
+    _modified_by = db.Column(db.String(), nullable=True)
 
 
 class Model(Timestamp, SurrogatePK, SurrogateAudit, db.Model):
@@ -422,12 +455,117 @@ else:
 
 """
 
+DOCKER_COMPOSE = """
+version: '3.3'
+services:
+  db:
+      image: postgres:11
+      container_name: testdb-pg
+      ports:
+        - "5432:5432"
+      environment:
+        POSTGRES_DB: testdb
+        POSTGRES_USER: test_user
+        POSTGRES_PASSWORD: test_pass
+      volumes:
+        - pgdata_schedule:/var/lib/postgresql/data
+volumes:
+    pgdata_schedule:
+        driver: local
+"""
+
+ALEMBIC_ENV ="""
+from logging.config import fileConfig
+import pathlib
+from sqlalchemy import engine_from_config
+from sqlalchemy import pool
+import sqlalchemy_utils
+from alembic import context
+import sys
+import os
+# this is the Alembic Config object, which provides
+# access to the values within the .ini file in use.
+config = context.config
+section = config.config_ini_section
+config.set_section_option(section, "DB_USER", os.environ.get("DB_USER"))
+config.set_section_option(section, "DB_PASSWORD",
+                          os.environ.get("DB_PASSWORD"))
+config.set_section_option(section, "DB_HOST", os.environ.get("DB_HOST"))
+config.set_section_option(section, "DB_PORT", os.environ.get("DB_PORT"))
+config.set_section_option(section, "DB_NAME", os.environ.get("DB_NAME"))
+
+# Interpret the config file for Python logging.
+# This line sets up loggers basically.
+fileConfig(config.config_file_name)
+
+# add your model's MetaData object here
+# for 'autogenerate' support
+sys.path.append(str(pathlib.Path(__file__).resolve().parents[3]))
+from app.main import db as target_metadata      # noqa
+
+# other values from the config, defined by the needs of env.py,
+# can be acquired:
+# my_important_option = config.get_main_option("my_important_option")
+# ... etc.
+
+
+def render_item(type_, obj, autogen_context):
+    
+    if type_ == "type" and isinstance(obj,
+                                      sqlalchemy_utils.types.uuid.UUIDType):
+        # Add import for this type
+        autogen_context.imports.add("import sqlalchemy_utils")
+        autogen_context.imports.add("import uuid")
+        autogen_context.imports.add("import gino")
+
+        return "sqlalchemy_utils.types.uuid.UUIDType(), default=uuid.uuid4"
+
+    # Default rendering for other objects
+    return False
+
+
+def run_migrations_offline():
+    url = config.get_main_option("sqlalchemy.url")
+    context.configure(
+        url=url,
+        target_metadata=target_metadata,
+        literal_binds=True,
+        dialect_opts={"paramstyle": "named"},
+    )
+
+    with context.begin_transaction():
+        context.run_migrations()
+
+
+def run_migrations_online():
+    connectable = engine_from_config(
+        config.get_section(config.config_ini_section),
+        prefix="sqlalchemy.",
+        poolclass=pool.NullPool,
+    )
+
+    with connectable.connect() as connection:
+        context.configure(
+            connection=connection, target_metadata=target_metadata,
+            render_item=render_item
+        )
+
+        with context.begin_transaction():
+            context.run_migrations()
+
+
+if context.is_offline_mode():
+    run_migrations_offline()
+else:
+    run_migrations_online()
+"""
+
 ALEMBIC = """
 [alembic]
 script_location = app/db/migrations
 prepend_sys_path = .
 version_path_separator = os
-sqlalchemy.url = postgresql://%(DB_USER)s:%(DB_PASSWORD)s@%(DB_HOST)s:%(DB_PORT)s/%(DB_NAME)s
+sqlalchemy.url = postgresql://test_user:test_pass@127.0.0.1:5432/testdb
 [post_write_hooks]
 [loggers]
 keys = root,sqlalchemy,alembic
@@ -462,7 +600,7 @@ def try_except_init(path):
     "Creates __init__.py file for every directory"
     p = os.path.join(path, "__init__.py")
     try:
-        os.mknod(p)
+        open(p, 'w').close()
     except Exception:
         pass
 
@@ -473,7 +611,8 @@ def task_create_directories():
     """
     try:
         os.mkdir("app")
-        os.mknod("__init__.py")
+        os.mkdir("docs")
+        open('__init__.py', 'w').close()
         root_path = 'app'
         for items in ['api', "core", "db", "test", "utils", "it", "static"]:
             path = os.path.join(root_path, items)
@@ -527,7 +666,8 @@ def task_create_directories():
                     if item == "singleton_type.py":
                         with open(p, "a") as output:
                             output.write(SINGLETONE_TYPE)
-    except OSError:
+    except OSError as e:
+        print (e)
         pass
     try:
         for item in [".gitignore", "app/main.py"]:
@@ -541,7 +681,8 @@ def task_create_directories():
         return {
             'actions': ["git init", ],
         }
-    except OSError:
+    except OSError as e:
+        print(e)
         pass
 
 
@@ -557,8 +698,25 @@ def task_create_venv():
 
 def task_install_dependencies():
     packages = (
-        "uvicorn fastapi alembic pyhumps"
-        " firebase-admin gino SQLAlchemy SQLAlchemy-Utils"
+        "alembic==1.7.5 anyio==3.4.0 asgiref==3.4.1 asyncpg==0.25.0"
+        " autopep8==1.6.0 CacheControl==0.12.10 cachetools==4.2.4"
+        " certifi==2021.10.8 charset-normalizer==2.0.10 click==8.0.3"
+        " cron-validator==1.0.3 fastapi==0.70.1 firebase-admin==5.2.0"
+        " gino==1.0.1 gino-starlette==0.1.3 google-api-core==2.3.2" 
+        " google-api-python-client==2.34.0 google-auth==2.3.3"
+        " google-auth-httplib2==0.1.0 google-cloud-core==2.2.1"
+        " google-cloud-firestore==2.3.4 google-cloud-storage==1.44.0"
+        " google-crc32c==1.3.0 google-resumable-media==2.1.0"
+        " googleapis-common-protos==1.54.0 greenlet==1.1.2 grpcio==1.43.0"
+        " grpcio-status==1.43.0 h11==0.12.0 httplib2==0.20.2 idna==3.3"
+        " importlib-metadata==1.7.0 importlib-resources==5.4.0 Mako==1.1.6"
+        " MarkupSafe==2.0.1 msgpack==1.0.3 packaging==21.3 proto-plus==1.19.8"
+        " protobuf==3.19.3 psycopg2==2.9.3 pyasn1==0.4.8 pyasn1-modules==0.2.8"
+        " pycodestyle==2.8.0 pydantic==1.9.0 pyhumps==3.5.0 pyparsing==3.0.6"
+        " python-dateutil==2.8.2 pytz==2021.3 requests==2.27.1 rsa==4.8"
+        " six==1.16.0 sniffio==1.2.0 SQLAlchemy==1.3.24 SQLAlchemy-Utils==0.38.2"
+        " starlette==0.16.0 toml==0.10.2 typing-extensions==4.0.1"
+        " uritemplate==4.1.1 urllib3==1.26.8 uvicorn==0.16.0 zipp==3.7.0"
     )
     return {
         'actions': [f'venv/bin/pip install {packages}'],
@@ -577,6 +735,13 @@ def task_alembic():
         'actions': ['venv/bin/alembic init app/db/migrations'],
     }
 
+def task_create_env():
+    def create_env():
+        with open(".env", "w") as output:
+            output.write(DOT_ENV)
+    return {
+        'actions': [create_env],
+    }
 
 def task_replace_alembic():
     def rm_alembic():
@@ -587,7 +752,50 @@ def task_replace_alembic():
         'actions': [rm_alembic],
     }
 
-# def task_run_server():
-#     return {
-#         'actions': ['venv/bin/uvicorn app.main:app --reload --port 5000'],
-#     }
+def task_replace_alembic_env():
+    def rm_alembic_env():
+        os.remove("app/db/migrations/env.py")
+        with open("app/db/migrations/env.py", "a") as output:
+            output.write(ALEMBIC_ENV)
+    return {
+        'actions': [rm_alembic_env],
+    }
+
+def task_dockercompose():
+    def setup_dockercompose():
+        with open("docker-compose.yaml", "a") as output:
+            output.write(DOCKER_COMPOSE)
+    return {
+        'actions': [setup_dockercompose],
+    }
+
+def task_setup_test_controller():
+    def setup_test_controller():
+        with open("app/api/controller/test_controller.py", "w") as output:
+            output.write(TEST_CONTROLLER)
+    return {
+        'actions': [setup_test_controller],
+    }
+
+def task_setup_model():
+    def setup_model():
+        with open("app/db/models.py", "w") as output:
+            output.write(TEST_MODELS)
+    return {
+        'actions': [setup_model],
+    }
+
+def task_set_env():
+    return {
+        'actions': ['source .env'],
+    }
+
+def task_docker_db():
+    return {
+        'actions': ['docker compose up -d'],
+    }
+
+def task_run_server():
+    return {
+        'actions': ['venv/bin/uvicorn app.main:app --reload --port 5000'],
+    }
