@@ -77,6 +77,38 @@ dmypy.json
 cython_debug/
 """
 
+GENERIC_SCHEMA = """
+from typing import Any, Optional
+from uuid import UUID
+from app.utils.helper import to_camel
+import asyncpg.pgproto.pgproto
+import pydantic.json
+from pydantic import BaseModel
+
+pydantic.json.ENCODERS_BY_TYPE[asyncpg.pgproto.pgproto.UUID] = str
+
+
+class GenericErrorResponseSchema(BaseModel):
+    type: Optional[str]
+    code: int
+    message: str
+    details: Any
+
+    class Config:
+        alias_generator = to_camel
+        allow_population_by_field_name = True
+
+
+class SuccessResponseSchema(BaseModel):
+    type: str
+    code: int
+    details: Any
+    message: str
+
+    class Config:
+        alias_generator = to_camel
+        allow_population_by_field_name = True
+"""
 TEST_MODELS = """
 from typing import Awaitable
 from uuid import UUID
@@ -436,6 +468,28 @@ class Model(Timestamp, SurrogatePK, SurrogateAudit, db.Model):
         return await cls(**kwargs)._create()
 
 """
+UTIL_HEADERS = """
+from typing_extensions import Final
+
+AUTH_ERROR_MEDIA_HEADER: Final = {"Content-Type": "application/vnd+test.identity.auth-failurer+json"}  # noqa
+NOT_FOUND_HEADER: Final = {"Content-Type": "application/vnd+test.service.entity.not-found+json"}  # noqa
+NOT_ACCEPTABLE_HEADER: Final = {"Content-Type": "application/vnd+test.service.entity.not-acceptable+json"}  # noqa
+INTERNAL_SERVER_ERROR_HEADER: Final = {"Content-Type": "application/vnd+test.service.internal-server-error+json"}  # noqa
+BAD_REQUEST_HEADER: Final = {"Content-Type": "application/vnd+test.service.bad-request+json"}  # noqa
+"""
+UTIL_TYPES = """
+from typing_extensions import Final
+
+CONFIG_CREATED_TYPE: Final = "vnd.test.service.config-created"
+ENTITY_CREATED_TYPE: Final = "vnd.test.service.config-created"
+CONFIG_UPDATED_TYPE: Final = "vnd.test.service.config-updated"
+NOT_FOUND_TYPE: Final = "vnd.test.service.entity.not-found"
+NOT_ACCEPTABLE_TYPE: Final = "vnd.test.service.entity.not-acceptable"
+INTERNAL_SERVER_ERROR_TYPE: Final = "vnd.test.service.internal-server-error"
+BAD_REQUEST_TYPE: Final = "vnd.test.service.bad_request"
+PARTIAL_CONTENT_TYPE: Final = "vnd.test.service.partial-content"
+"""
+
 EXTENTIONS = """
 from app.core.factories import settings
 from ssl import create_default_context
@@ -634,6 +688,12 @@ def task_create_directories():
                             if item == "generic_exception.py":
                                 with open(p, "a") as output:
                                     output.write(GENERIC_EXCEPTION)
+                    if pa == "app/api/schema":
+                        for item in ["generic_schema.py"]:
+                            p = os.path.join(pa, item)
+                            if item == "generic_schema.py":
+                                with open(p, "a") as output:
+                                    output.write(GENERIC_SCHEMA)
             if path == "app/test":
                 for dir in ['api', 'resources']:
                     pa = os.path.join(path, dir)
@@ -653,6 +713,8 @@ def task_create_directories():
                             if item == "settings.py":
                                 with open(p, "a") as output:
                                     output.write(SETTINGS)
+                
+
 
                 with open(os.path.join(path, "factories.py"), "a") as output:
                     output.write(FACTORIES)
@@ -663,7 +725,7 @@ def task_create_directories():
 
             if path == "app/utils":
                 try_except_init(path)
-                for item in ["helper.py", "singleton_type.py"]:
+                for item in ["helper.py", "singleton_type.py", "types.py", "headers.py"]:
                     p = os.path.join(path, item)
                     if item == "helper.py":
                         with open(p, "a") as output:
@@ -671,6 +733,12 @@ def task_create_directories():
                     if item == "singleton_type.py":
                         with open(p, "a") as output:
                             output.write(SINGLETONE_TYPE)
+                    if item == "types.py":
+                        with open(p, "a") as output:
+                            output.write(UTIL_TYPES)
+                    if item == "headers.py":
+                        with open(p, "a") as output:
+                            output.write(UTIL_HEADERS)
     except OSError as e:
         print (e)
         pass
