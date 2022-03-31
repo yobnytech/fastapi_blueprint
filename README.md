@@ -34,3 +34,8 @@ Start writing your models and controllers. You're good to go.
     ```
     doit
     ```
+## How to use dodo-hexogonal
+1. Run,
+   ```
+   doit -f dodo-hexagonal
+   ```
